@@ -14,14 +14,34 @@
 
 #include "../generated/rart-defines.h"
 
+/**
+ * @brief Number of the mutexes
+ */
 #define NUM_OF_MUTEXES (7 * NUM_OF_TASKS)
+
+/**
+ * @brief Number of the message queues
+ */
 #define NUM_OF_MSGQ (4 * NUM_OF_TASKS)
+
+/**
+ * @brief Number of the message queues size
+ */
 #define NUM_OF_MSG_ITENS (4 * NUM_OF_TASKS)
 
+/**
+ * @brief Maximum size of the message queue item
+ */
 #define MSG_ITEM_SIZE 8
 
+/**
+ * @brief Total memory of the heap
+ */
 #define HEAP_TOTAL 1024
 
+/**
+ * @brief Invalid index
+ */
 #define INVALID_INDEX ((rart_index_t) -1)
 
 /**
@@ -30,7 +50,7 @@
 K_HEAP_DEFINE(rtos_allocator, HEAP_TOTAL);
 
 /**
- * @brief Type of the timer callback called after the Zephyr timer
+ * @brief Type of the user timer callback called inside the Zephyr timer expire callback.
  */
 typedef void (*rart_timer_callback_t)(const void *);
 
@@ -89,6 +109,14 @@ static struct rart_fields {
                        .is_free  = true,
                    }},
 };
+
+/**
+ * @brief Search a timer by its address.
+ *
+ * @param timer_id[in] Timer address
+ * @return rart_index_t Index of the timer.
+ */
+static rart_index_t search_timer(struct k_timer *timer_id);
 
 /**
  * @brief Search the next timer free
@@ -192,7 +220,7 @@ void panic(const char *format, ...)
 }
 
 /**
- * @brief Get a new mutex in the list
+ * @brief Get a new Zephyr mutex in the list
  *
  * @return void* Zephyr mutex C reference
  */
@@ -209,7 +237,7 @@ void *rtos_mutex_new()
 }
 
 /**
- * @brief Free a mutex used
+ * @brief Free a Zephyr mutex used
  *
  * @param mutex[in] Zephyr mutex C reference
  */
@@ -240,7 +268,7 @@ int32_t rtos_mutex_lock(void *mutex, uint32_t timeout)
  * @brief Unlock a Zephyr mutex
  *
  * @param mutex Zephyr mutex C reference
- * @return 0 if success, errno otherwise.
+ * @return int32_t 0 if success, errno otherwise.
  */
 int32_t rtos_mutex_unlock(void *mutex)
 {
@@ -248,10 +276,10 @@ int32_t rtos_mutex_unlock(void *mutex)
 }
 
 /**
- * @brief
+ * @brief Get a new Zephyr message queue in the list
  *
- * @param data_size Size, in bytes, of the allocated data
- * @return void* Address of the data.
+ * @param data_size Item size of the message queue
+ * @return void* Zephyr message queue C reference
  */
 void *rtos_msgq_new(size_t data_size)
 {
@@ -270,12 +298,12 @@ void *rtos_msgq_new(size_t data_size)
 }
 
 /**
- * @brief
+ * @brief Send the data to a Zephyr message queue
  *
- * @param msgq
- * @param data
- * @param timeout
- * @return
+ * @param msgq[in] Zephyr message queue C reference
+ * @param data[in] Reference to the data
+ * @param timeout Timeout of the send operation
+ * @return int32_t 0 if success, errno otherwise.
  */
 int32_t rtos_msgq_send(void *msgq, const void *data, uint32_t timeout)
 {
@@ -283,12 +311,12 @@ int32_t rtos_msgq_send(void *msgq, const void *data, uint32_t timeout)
 }
 
 /**
- * @brief
+ * @brief Receive the data from a Zephyr message queue
  *
- * @param msgq
- * @param data_out
- * @param timeout
- * @return
+ * @param msgq[in] Zephyr message queue C reference
+ * @param data_out[out] Address of the out data
+ * @param timeout Timeout of the receive operation.
+ * @return int32_t 0 if success, errno otherwise.
  */
 int32_t rtos_msgq_recv(void *msgq, void *data_out, uint32_t timeout)
 {
@@ -296,7 +324,7 @@ int32_t rtos_msgq_recv(void *msgq, void *data_out, uint32_t timeout)
 }
 
 /**
- * @brief
+ * @brief Initialize all Zephyr timers
  */
 void rtos_timer_init()
 {
@@ -307,13 +335,13 @@ void rtos_timer_init()
 }
 
 /**
- * @brief
+ * @brief Schedule a free timer
  *
- * @param callback
- * @param state
- * @param timeout
+ * @param callback[in] User callback called inside Zephyr Timer expire callback
+ * @param state[in] Context passed to user callback
+ * @param timeout Timer time to expire
  */
-void rtos_timer_reschedule(void (*callback)(const void *), const void *state,
+void rtos_timer_reschedule(rart_timer_callback_t callback, const void *state,
                            uint32_t timeout)
 {
     rart_index_t idx = search_free_timer();
@@ -330,28 +358,11 @@ void rtos_timer_reschedule(void (*callback)(const void *), const void *state,
 }
 
 /**
- * @brief
+ * @brief Alloc a memory chunk in the heap
  *
- * @param timer_id
- * @return
- */
-rart_index_t search_timer(struct k_timer *timer_id)
-{
-    for (int i = 0; i < NUM_OF_TASKS; ++i) {
-        if (&self.timers[i].timer == timer_id) {
-            return i;
-        }
-    }
-
-    return 0xff;
-}
-
-/**
- * @brief
- *
- * @param align
- * @param bytes
- * @return
+ * @param align Align of the memory chunk
+ * @param bytes Number of bytes of the memory chunk
+ * @return void* Memory Address
  */
 const void *heap_alloc(size_t align, size_t bytes)
 {
@@ -365,13 +376,24 @@ const void *heap_alloc(size_t align, size_t bytes)
 }
 
 /**
- * @brief
+ * @brief Dealloc a memory chunk in the heap
  *
- * @param mem
+ * @param mem Memory address
  */
 void heap_free(const void *mem)
 {
     k_heap_free(&rtos_allocator, (void *) mem);
+}
+
+static rart_index_t search_timer(struct k_timer *timer_id)
+{
+    for (int i = 0; i < NUM_OF_TASKS; ++i) {
+        if (&self.timers[i].timer == timer_id) {
+            return i;
+        }
+    }
+
+    return INVALID_INDEX;
 }
 
 static rart_index_t search_free_mutex()
