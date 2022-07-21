@@ -1,7 +1,7 @@
 /**
  * @file rart.c
  * @author Matheus T. dos Santos (tenoriomatheus0@gmail.com)
- * @brief
+ * @brief Backend of RART for the Zephyr OS
  * @version 0.1
  * @date 09/07/2022
  *
@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <zephyr.h>
 
-#include "../generated/rart-defines.h"
+#include "rart-defines.h"
 
 /**
  * @brief Number of the mutexes
@@ -51,8 +51,10 @@ K_HEAP_DEFINE(rtos_allocator, HEAP_TOTAL);
 
 /**
  * @brief Type of the user timer callback called inside the Zephyr timer expire callback.
+ *
+ * @param state State of user timer callback. This state is required by RART-rs
  */
-typedef void (*rart_timer_callback_t)(const void *);
+typedef void (*rart_timer_callback_t)(const void *state);
 
 /**
  * @brief Type of the index used in this lib.
@@ -71,7 +73,7 @@ static struct rart_fields {
     struct {
         struct {
             uint8_t
-                buffer[NUM_OF_MSG_ITENS * MSG_ITEM_SIZE]; /**< Message queue storage */
+                    buffer[NUM_OF_MSG_ITENS * MSG_ITEM_SIZE]; /**< Message queue storage */
             struct k_msgq msgq;                           /**< Zephyr OS message queue. */
         } instance[NUM_OF_MSGQ];                          /**< List of Message Queues */
         rart_index_t index; /**< Index of the next available message queue */
@@ -79,35 +81,35 @@ static struct rart_fields {
     } msgq;                 /**< Message queue sub-struct */
     struct {
         const void
-            *state; /**< Reference to state that will be sent in the timer callback. */
+                *state; /**< Reference to state that will be sent in the timer callback. */
         rart_timer_callback_t callback; /**< Timer callback */
         struct k_timer timer;           /**< Zephyr OS timer */
         bool is_free;                   /**< Flag to check if the mutex is free */
     } timers[NUM_OF_TASKS];             /**< List of timers */
 } self = {
-    .mutexes = {[0 ...(NUM_OF_MUTEXES - 1)] =
-                    {
-                        .mutex   = {0},
+        .mutexes = {[0 ...(NUM_OF_MUTEXES - 1)] =
+                {
+                        .mutex   = {},
                         .is_free = true,
                         .is_init = false,
-                    }},
-    .msgq =
-        {
-            .index    = 0,
-            .is_init  = false,
-            .instance = {[0 ...(NUM_OF_MSGQ - 1)] =
-                             {
-                                 .msgq   = {0},
-                                 .buffer = {0},
-                             }},
-        },
-    .timers = {[0 ...(NUM_OF_TASKS - 1)] =
-                   {
-                       .state    = NULL,
-                       .callback = NULL,
-                       .timer    = {0},
-                       .is_free  = true,
-                   }},
+                }},
+        .msgq =
+                {
+                        .index    = 0,
+                        .is_init  = false,
+                        .instance = {[0 ...(NUM_OF_MSGQ - 1)] =
+                                {
+                                        .msgq   = {},
+                                        .buffer = {0},
+                                }},
+                },
+        .timers = {[0 ...(NUM_OF_TASKS - 1)] =
+                {
+                        .state    = NULL,
+                        .callback = NULL,
+                        .timer    = {},
+                        .is_free  = true,
+                }},
 };
 
 /**
@@ -153,8 +155,7 @@ static void default_callback(struct k_timer *timer_id);
  * @param format Formatted string
  * @param ... Variable arguments
  */
-void print_error(const char *format, ...)
-{
+void print_error(const char *format, ...) {
     printk("\x1b[41m");
     va_list va;
     va_start(va, format);
@@ -169,8 +170,7 @@ void print_error(const char *format, ...)
  * @param format Formatted string
  * @param ... Variable arguments
  */
-void log_fn(const char *format, ...)
-{
+void log_fn(const char *format, ...) {
     printk("\x1b[35m");
     va_list va;
     va_start(va, format);
@@ -185,9 +185,8 @@ void log_fn(const char *format, ...)
  * @param file[in] The filename
  * @param line The line
  */
-void trace_fn(const char *file, uint32_t line)
-{
-    printk("\x1b[36m%s:%d\x1b[0m\n", file, line);
+void trace_fn(const char *file, uint32_t line) {
+//    printk("\x1b[36m%s:%d\x1b[0m\n", file, line);
 }
 
 /**
@@ -195,8 +194,7 @@ void trace_fn(const char *file, uint32_t line)
  *
  * @return uint32_t Current timestamp
  */
-uint32_t timestamp()
-{
+uint32_t timestamp() {
     return k_uptime_get() / 1000;
 }
 
@@ -206,8 +204,7 @@ uint32_t timestamp()
  * @param format Formatted string
  * @param ... Variable arguments
  */
-void panic(const char *format, ...)
-{
+void panic(const char *format, ...) {
     printk("\x1b[31m");
     va_list va;
     va_start(va, format);
@@ -215,8 +212,7 @@ void panic(const char *format, ...)
     va_end(va);
     printk("\x1b[0m");
 
-    while (1)
-        ;
+    while (1);
 }
 
 /**
@@ -224,8 +220,7 @@ void panic(const char *format, ...)
  *
  * @return void* Zephyr mutex C reference
  */
-void *rtos_mutex_new()
-{
+void *rtos_mutex_new() {
     rart_index_t idx = search_free_mutex();
 
     if (idx == INVALID_INDEX) {
@@ -241,8 +236,7 @@ void *rtos_mutex_new()
  *
  * @param mutex[in] Zephyr mutex C reference
  */
-void rtos_mutex_del(void *mutex)
-{
+void rtos_mutex_del(void *mutex) {
     rart_index_t idx = search_mutex(mutex);
 
     if (idx == INVALID_INDEX) {
@@ -259,8 +253,7 @@ void rtos_mutex_del(void *mutex)
  * @param timeout Timeout of mutex lock operation
  * @return int32_t 0 if success, errno otherwise.
  */
-int32_t rtos_mutex_lock(void *mutex, uint32_t timeout)
-{
+int32_t rtos_mutex_lock(void *mutex, uint32_t timeout) {
     return k_mutex_lock(mutex, K_MSEC(timeout));
 }
 
@@ -270,8 +263,7 @@ int32_t rtos_mutex_lock(void *mutex, uint32_t timeout)
  * @param mutex Zephyr mutex C reference
  * @return int32_t 0 if success, errno otherwise.
  */
-int32_t rtos_mutex_unlock(void *mutex)
-{
+int32_t rtos_mutex_unlock(void *mutex) {
     return k_mutex_unlock(mutex);
 }
 
@@ -281,8 +273,7 @@ int32_t rtos_mutex_unlock(void *mutex)
  * @param data_size Item size of the message queue
  * @return void* Zephyr message queue C reference
  */
-void *rtos_msgq_new(size_t data_size)
-{
+void *rtos_msgq_new(size_t data_size) {
     if (!self.msgq.is_init) {
         self.msgq.is_init = true;
         for (int i = 0; i < NUM_OF_MSGQ; ++i) {
@@ -291,7 +282,7 @@ void *rtos_msgq_new(size_t data_size)
         }
     }
 
-    void *msgq      = &self.msgq.instance[self.msgq.index].msgq;
+    void *msgq = &self.msgq.instance[self.msgq.index].msgq;
     self.msgq.index = (self.msgq.index >= NUM_OF_MSGQ - 1) ? 0 : (self.msgq.index + 1);
 
     return msgq;
@@ -305,8 +296,7 @@ void *rtos_msgq_new(size_t data_size)
  * @param timeout Timeout of the send operation
  * @return int32_t 0 if success, errno otherwise.
  */
-int32_t rtos_msgq_send(void *msgq, const void *data, uint32_t timeout)
-{
+int32_t rtos_msgq_send(void *msgq, const void *data, uint32_t timeout) {
     return k_msgq_put(msgq, data, K_MSEC(timeout));
 }
 
@@ -318,16 +308,14 @@ int32_t rtos_msgq_send(void *msgq, const void *data, uint32_t timeout)
  * @param timeout Timeout of the receive operation.
  * @return int32_t 0 if success, errno otherwise.
  */
-int32_t rtos_msgq_recv(void *msgq, void *data_out, uint32_t timeout)
-{
+int32_t rtos_msgq_recv(void *msgq, void *data_out, uint32_t timeout) {
     return k_msgq_get(msgq, data_out, K_MSEC(timeout));
 }
 
 /**
  * @brief Initialize all Zephyr timers
  */
-void rtos_timer_init()
-{
+void rtos_timer_init() {
     for (int i = 0; i < NUM_OF_TASKS; ++i) {
         self.timers[i].is_free = true;
         k_timer_init(&self.timers[i].timer, default_callback, NULL);
@@ -342,17 +330,15 @@ void rtos_timer_init()
  * @param timeout Timer time to expire
  */
 void rtos_timer_reschedule(rart_timer_callback_t callback, const void *state,
-                           uint32_t timeout)
-{
+                           uint32_t timeout) {
     rart_index_t idx = search_free_timer();
 
     if (idx == INVALID_INDEX) {
         print_error("Invalid index\n");
-        while (1)
-            ;
+        while (1);
     }
     self.timers[idx].callback = callback;
-    self.timers[idx].state    = state;
+    self.timers[idx].state = state;
 
     k_timer_start(&self.timers[idx].timer, K_SECONDS(timeout), K_NO_WAIT);
 }
@@ -364,13 +350,11 @@ void rtos_timer_reschedule(rart_timer_callback_t callback, const void *state,
  * @param bytes Number of bytes of the memory chunk
  * @return void* Memory Address
  */
-const void *heap_alloc(size_t align, size_t bytes)
-{
+const void *heap_alloc(size_t align, size_t bytes) {
     void *ptr = k_heap_aligned_alloc(&rtos_allocator, align, bytes, K_NO_WAIT);
     if (ptr == NULL) {
         printk("Allocation error\n");
-        while (1)
-            ;
+        while (1);
     }
     return ptr;
 }
@@ -380,13 +364,11 @@ const void *heap_alloc(size_t align, size_t bytes)
  *
  * @param mem Memory address
  */
-void heap_free(const void *mem)
-{
+void heap_free(const void *mem) {
     k_heap_free(&rtos_allocator, (void *) mem);
 }
 
-static rart_index_t search_timer(struct k_timer *timer_id)
-{
+static rart_index_t search_timer(struct k_timer *timer_id) {
     for (int i = 0; i < NUM_OF_TASKS; ++i) {
         if (&self.timers[i].timer == timer_id) {
             return i;
@@ -396,8 +378,7 @@ static rart_index_t search_timer(struct k_timer *timer_id)
     return INVALID_INDEX;
 }
 
-static rart_index_t search_free_mutex()
-{
+static rart_index_t search_free_mutex() {
     for (int i = 0; i < NUM_OF_MUTEXES; ++i) {
         if (self.mutexes[i].is_free || !self.mutexes[i].is_init) {
             self.mutexes[i].is_free = false;
@@ -413,8 +394,7 @@ static rart_index_t search_free_mutex()
     return INVALID_INDEX;
 }
 
-static rart_index_t search_mutex(struct k_mutex *mutex)
-{
+static rart_index_t search_mutex(struct k_mutex *mutex) {
     for (int i = 0; i < NUM_OF_MUTEXES; ++i) {
         if (&self.mutexes[i].mutex == mutex) {
             return i;
@@ -424,22 +404,19 @@ static rart_index_t search_mutex(struct k_mutex *mutex)
     return INVALID_INDEX;
 }
 
-static void default_callback(struct k_timer *timer_id)
-{
+static void default_callback(struct k_timer *timer_id) {
     rart_index_t idx = search_timer(timer_id);
 
     if (idx == INVALID_INDEX) {
         print_error("Invalid index\n");
-        while (1)
-            ;
+        while (1);
     }
 
     self.timers[idx].callback(self.timers[idx].state);
     self.timers[idx].is_free = true;
 }
 
-static rart_index_t search_free_timer()
-{
+static rart_index_t search_free_timer() {
     for (int i = 0; i < NUM_OF_TASKS; ++i) {
         if (self.timers[i].is_free) {
             self.timers[i].is_free = false;
