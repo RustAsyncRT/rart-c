@@ -156,12 +156,11 @@ static void default_callback(struct k_timer *timer_id);
  * @param ... Variable arguments
  */
 void print_error(const char *format, ...) {
-    printk("\x1b[41m");
+    printk("[err]");
     va_list va;
     va_start(va, format);
     vprintk(format, va);
     va_end(va);
-    printk("\x1b[0m");
 }
 
 /**
@@ -171,12 +170,11 @@ void print_error(const char *format, ...) {
  * @param ... Variable arguments
  */
 void log_fn(const char *format, ...) {
-    printk("\x1b[35m");
+    printk("[log]");
     va_list va;
     va_start(va, format);
     vprintk(format, va);
     va_end(va);
-    printk("\x1b[0m");
 }
 
 /**
@@ -186,7 +184,7 @@ void log_fn(const char *format, ...) {
  * @param line The line
  */
 void trace_fn(const char *file, uint32_t line) {
-//    printk("\x1b[36m%s:%d\x1b[0m\n", file, line);
+    printk("[trace]%s:%d\n", file, line);
 }
 
 /**
@@ -205,12 +203,11 @@ uint32_t timestamp() {
  * @param ... Variable arguments
  */
 void panic(const char *format, ...) {
-    printk("\x1b[31m");
+    printk("[panic]");
     va_list va;
     va_start(va, format);
     vprintk(format, va);
     va_end(va);
-    printk("\x1b[0m");
 
     while (1);
 }
