@@ -37,7 +37,7 @@
 /**
  * @brief Total memory of the heap
  */
-#define HEAP_TOTAL 1024
+#define HEAP_TOTAL 2048
 
 /**
  * @brief Invalid index
