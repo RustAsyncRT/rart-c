@@ -197,6 +197,15 @@ uint32_t timestamp() {
 }
 
 /**
+ * @brief Get the current timestamp, in milliseconds
+ *
+ * @return uint32_t Current timestamp, in milliseconds
+ */
+uint32_t timestamp_millis() {
+    return k_uptime_get();
+}
+
+/**
  * @brief Print a formatted string in red and stay on the infinite loop
  *
  * @param format Formatted string
@@ -337,7 +346,7 @@ void rtos_timer_reschedule(rart_timer_callback_t callback, const void *state,
     self.timers[idx].callback = callback;
     self.timers[idx].state = state;
 
-    k_timer_start(&self.timers[idx].timer, K_SECONDS(timeout), K_NO_WAIT);
+    k_timer_start(&self.timers[idx].timer, K_MSEC(timeout), K_NO_WAIT);
 }
 
 /**
